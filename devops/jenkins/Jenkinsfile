@@ -1,0 +1,110 @@
+pipeline {
+  agent {label 'spartacus'}
+  parameters {
+    string(name: 'gitlabSourceBranch', defaultValue: 'master', description: 'branch for build')
+    choice(name: 'PERENIO_ENV', choices: ['dev', 'stage', 'prod', 'a1'], description: '')
+    choice(name: 'LOCUST_FILE', choices: ['/locust/locust_generator/locust_create_user.py',
+                                          '/locust/locust_auth.py',
+                                          '/locust/locust_apif_simple.py',
+                                          '/locust/locust_apif_with_auth.py',
+                                          '/locust/locust_mqtt_keep_alive.py',
+                                          '/locust/locust_mqtt_check_ota.py',
+                                          '/locust/locust_ws_mqtt_smoke_sensor_add_events_remove.py',
+                                          '/locust/locust_ws_mqtt_power_plug_add_events_remove.py'], description: '')
+    booleanParam(name: 'docker_rebuild', defaultValue: false, description: 'rebuild base image?')
+    booleanParam(name: 'STANDALONE', defaultValue: false, description: 'if standalone false it mean master slave configuration')
+  }
+  environment {
+    branch="${params.gitlabSourceBranch}"
+    project="perenio/tests"
+    name="locust-performance"
+    name_lc=name.toLowerCase()
+    hub_url="hub.dev.perenio.com"
+    hub_path="prestigio/devops/devops"
+    deploy="${params.deploy}"
+    PERENIO_ENV="${PERENIO_ENV}"
+    LOCUST_FILE="${LOCUST_FILE}"
+  }
+
+  post {
+    failure {
+      updateGitlabCommitStatus name: 'jenkins', state: 'failed'
+    }
+    success {
+      updateGitlabCommitStatus name: 'jenkins', state: 'success'
+    }
+    always {
+      deleteDir()
+    }
+  }
+
+  options {
+    gitLabConnection('gitlab')
+    buildDiscarder(logRotator(numToKeepStr: '20'))
+    timeout(time: 120, unit: 'MINUTES')
+  }
+
+  stages {
+    stage("SCM") {
+      steps {
+        dir(name) {
+          updateGitlabCommitStatus name: 'jenkins', state: 'pending'
+          checkout changelog: true, poll: false, scm: [
+            $class: 'GitSCM',
+            branches: [[name: "origin/${branch}"]],
+            browser: [$class: 'GitLab', repoUrl: "https://gitlab.dev.perenio.com/${project}/${name}", version: '10.2'],
+            doGenerateSubmoduleConfigurations: false,
+            extensions: [[$class: 'CleanBeforeCheckout']],
+            submoduleCfg: [],
+            userRemoteConfigs: [[credentialsId: 'gitlab-ssh', url: "git@gitlab.dev.perenio.com:${project}/${name}.git"]]
+          ]
+        }
+      }
+    }
+
+    stage("docker build") {
+      when {
+        allOf {
+            environment name: 'docker_rebuild', value: 'true'
+        }
+      }
+      steps {
+        script {
+          sshagent(credentials: ['gitlab-ssh']) {
+            sh "cp requirements.txt ${name}/devops/docker/requirements.txt"
+            sh "docker rmi -f hub.dev.perenio.com/${hub_path}/${name_lc}:latest"
+            dir(name+"/devops/docker") {
+              def image = docker.build("${hub_path}/${name_lc}:latest", "-f Dockerfile  .")
+              docker.withRegistry('https://hub.dev.perenio.com:443', 'jenkins-docker-registry') {
+                image.push("latest")
+              }
+            }
+          }
+        }
+      }
+    }
+
+    stage("Ansible deploy") {
+        steps {
+            sshagent(credentials : ['ssh-aaa-nodes']){
+                script {
+                    withCredentials([usernamePassword(credentialsId: 'gitlab-user', usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD')]) {
+                        dir(name+"/devops/ansible") {
+                            sh '''
+                                export ANSIBLE_INVENTORY=hosts
+                                if $STANDALONE
+                                then
+                                    ansible-playbook -l standalone -b 1.app.yaml -e LOCUST_FILE=${LOCUST_FILE} -e PERENIO_ENV=${PERENIO_ENV} -e registry_login=$USERNAME -e registry_password=$PASSWORD
+                                else
+                                    ansible-playbook --limit=master -b 1.app.yaml -e LOCUST_FILE=${LOCUST_FILE} -e PERENIO_ENV=${PERENIO_ENV} -e registry_login=$USERNAME -e registry_password=$PASSWORD
+                                    ansible-playbook --limit=slave -b 1.app.yaml -e LOCUST_FILE=${LOCUST_FILE} -e PERENIO_ENV=${PERENIO_ENV} -e registry_login=$USERNAME -e registry_password=$PASSWORD
+                                fi
+                            '''
+                        }
+                    }
+                }
+            }
+        }
+    }
+  }
+}

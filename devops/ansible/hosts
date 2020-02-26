@@ -1,0 +1,13 @@
+[standalone]
+standalone1 ansible_host=locust.dev.perenio.com ansible_user=ubuntu
+
+[master]
+master1 ansible_host=locust.dev.perenio.com ansible_user=ubuntu
+
+[slave]
+slave1 ansible_host=192.168.22.160 ansible_user=ubuntu
+slave2 ansible_host=192.168.22.161 ansible_user=ubuntu
+slave3 ansible_host=192.168.22.162 ansible_user=ubuntu
+slave4 ansible_host=192.168.22.163 ansible_user=ubuntu
+slave5 ansible_host=192.168.22.164 ansible_user=ubuntu
+slave6 ansible_host=192.168.22.165 ansible_user=ubuntu

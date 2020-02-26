@@ -1,0 +1,104 @@
+- hosts: all
+
+  vars_files:
+    - group_vars/vars.yaml
+
+  tasks:
+    - name: Stop locust container
+      docker_container:
+        name: "{{ item }}"
+        state: absent
+      with_items:
+        - master
+        - slave
+        - standalone
+
+    - name: Clean locust scripts
+      file:
+        state: absent
+        path: "/home/ubuntu/locust-performance/"
+
+    - name: Get updated files from git repository
+      git:
+        repo: "git@gitlab.dev.perenio.com:perenio/tests/locust-performance.git"
+        dest: /home/ubuntu/locust-performance
+        force: yes
+
+    - name: Log in to hub.dev.perenio.com
+      docker_login:
+        registry: "{{ registry }}"
+        username: "{{ registry_login }}"
+        password: "{{ registry_password }}"
+        reauthorize: yes
+
+- hosts: standalone
+
+  vars_files:
+    - group_vars/vars.yaml
+
+  tasks:
+    - name: Setup locust container
+      docker_container:
+        name: standalone
+        hostname: standalone
+        image: "{{ image }}"
+        state: started
+        restart_policy: always
+        pull: yes
+        volumes:
+          - /home/ubuntu/locust-performance:/locust
+        ports:
+          - "80:8089"
+        env:
+          PERENIO_ENV: "{{ PERENIO_ENV }}"
+          LOCUST_FILE: "{{ LOCUST_FILE }}"
+
+- hosts: master
+
+  vars_files:
+    - group_vars/vars.yaml
+
+  tasks:
+    - name: Setup locust container
+      docker_container:
+        name: master
+        hostname: master
+        image: "{{ image }}"
+        state: started
+        restart_policy: always
+        pull: yes
+        volumes:
+          - /home/ubuntu/locust-performance:/locust
+        ports:
+          - "80:8089"
+          - "5557:5557"
+        env:
+          PERENIO_ENV: "{{ PERENIO_ENV }}"
+          LOCUST_FILE: "{{ LOCUST_FILE }}"
+          LOCUST_MODE: "master"
+
+
+- hosts: slave
+
+  vars_files:
+    - group_vars/vars.yaml
+
+  tasks:
+    - name: Setup locust container
+      docker_container:
+        name: slave
+        hostname: slave
+        image: "{{ image }}"
+        state: started
+        restart_policy: always
+        pull: yes
+        volumes:
+          - /home/ubuntu/locust-performance:/locust
+        ports:
+          - "80:8089"
+          - "5557:5557"
+        env:
+          PERENIO_ENV: "{{ PERENIO_ENV }}"
+          LOCUST_FILE: "{{ LOCUST_FILE }}"
+          LOCUST_MODE: "slave"
+          LOCUST_MASTER_HOST: "{{ LOCUST_MASTER_HOST }}"

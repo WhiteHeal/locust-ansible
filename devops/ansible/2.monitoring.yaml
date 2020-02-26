@@ -1,0 +1,36 @@
+- hosts: master
+
+  vars_files:
+    - group_vars/vars.yaml
+    - name: Setup grafana container
+      docker_container:
+        name: grafana
+        hostname: grafana
+        image: "grafana/grafana"
+        state: started
+        restart_policy: always
+        pull: yes
+        volumes:
+          - /data/grafana:/var/lib/grafana
+        ports:
+          - "3000:3000"
+
+    - name: Setup grafana container
+      docker_container:
+        name: influxdb
+        hostname: influxdb
+        image: "influxdb"
+        state: started
+        restart_policy: always
+        pull: yes
+        volumes:
+          - /data/influxdb:/var/lib/influxdb
+        ports:
+          - "8086:8086"
+
+    - name: Set up network for conteiners containers
+      docker_network:
+        name: network_one
+        connected:
+          - influxdb
+          - grafana

@@ -1,0 +1,7 @@
+registry: "hub.dev.perenio.com"
+registry_login: "registry-user"
+registry_password: "change_registry_password"
+image: "hub.dev.perenio.com/prestigio/devops/devops/locust-performance:latest"
+PERENIO_ENV: "dev"
+LOCUST_FILE: "/locust/locust_auth.py"
+LOCUST_MASTER_HOST: "192.168.22.59"
